@@ -1,4 +1,30 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import emitter from '@adonisjs/core/services/emitter'
+
+// Store connected SSE clients
+const clients = new Set<any>()
+
+// Store recent emails (in-memory for now)
+const recentEmails: any[] = []
+
+// Listen for email received events
+emitter.on('email:received', (emailData) => {
+  // Store the email
+  recentEmails.unshift(emailData)
+  if (recentEmails.length > 50) {
+    recentEmails.pop()
+  }
+
+  // Broadcast to all connected clients
+  const message = JSON.stringify({ type: 'email:received', data: emailData })
+  clients.forEach((client) => {
+    try {
+      client.write(`data: ${message}\n\n`)
+    } catch (error) {
+      console.error('Error writing to SSE client:', error)
+    }
+  })
+})
 
 export default class EventsController {
   /**
@@ -13,6 +39,9 @@ export default class EventsController {
       'Access-Control-Allow-Origin': '*',
     })
 
+    // Add client to set
+    clients.add(response.response)
+
     // Send initial connection message
     response.response.write(`data: ${JSON.stringify({ type: 'connected', message: 'SSE connection established' })}\n\n`)
 
@@ -24,22 +53,17 @@ export default class EventsController {
     // Clean up on connection close
     response.response.on('close', () => {
       clearInterval(heartbeatInterval)
+      clients.delete(response.response)
     })
   }
 
   /**
-   * Example endpoint to trigger an event
-   * In a real app, this would broadcast to all connected clients
+   * Get recent emails
    */
-  async trigger({ request, response }: HttpContext) {
-    const data = request.only(['message'])
-
-    // In a real implementation, you would broadcast this to all connected SSE clients
-    // For now, just acknowledge receipt
+  async getRecentEmails({ response }: HttpContext) {
     return response.json({
       success: true,
-      message: 'Event triggered',
-      data,
+      emails: recentEmails,
     })
   }
 }

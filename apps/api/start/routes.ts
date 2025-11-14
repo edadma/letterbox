@@ -9,6 +9,8 @@
 
 import router from '@adonisjs/core/services/router'
 const EventsController = () => import('#controllers/events_controller')
+const MailController = () => import('#controllers/mail_controller')
+const WebhooksController = () => import('#controllers/webhooks_controller')
 
 router.get('/', async () => {
   return {
@@ -19,4 +21,10 @@ router.get('/', async () => {
 
 // Server-Sent Events routes
 router.get('/events/stream', [EventsController, 'stream'])
-router.post('/events/trigger', [EventsController, 'trigger'])
+router.get('/events/recent-emails', [EventsController, 'getRecentEmails'])
+
+// Mail routes
+router.post('/mail/send', [MailController, 'send'])
+
+// Webhook routes
+router.post('/webhooks/inbound-email', [WebhooksController, 'inboundEmail'])
