@@ -8,6 +8,9 @@
 */
 
 import router from '@adonisjs/core/services/router'
+import { middleware } from './kernel.js'
+
+const AuthController = () => import('#controllers/auth_controller')
 const EventsController = () => import('#controllers/events_controller')
 const MailController = () => import('#controllers/mail_controller')
 const WebhooksController = () => import('#controllers/webhooks_controller')
@@ -19,12 +22,27 @@ router.get('/', async () => {
   }
 })
 
-// Server-Sent Events routes
-router.get('/events/stream', [EventsController, 'stream'])
-router.get('/events/recent-emails', [EventsController, 'getRecentEmails'])
+// Auth routes (public)
+router.post('/auth/register-account', [AuthController, 'registerAccount'])
+router.post('/auth/register-user', [AuthController, 'registerUser'])
+router.post('/auth/login', [AuthController, 'login'])
+router.post('/auth/logout', [AuthController, 'logout'])
+router.get('/auth/me', [AuthController, 'me']).use(middleware.auth())
 
-// Mail routes
-router.post('/mail/send', [MailController, 'send'])
+// Server-Sent Events routes (protected)
+router
+  .group(() => {
+    router.get('/events/stream', [EventsController, 'stream'])
+    router.get('/events/recent-emails', [EventsController, 'getRecentEmails'])
+  })
+  .use(middleware.auth())
 
-// Webhook routes
+// Mail routes (protected)
+router
+  .group(() => {
+    router.post('/mail/send', [MailController, 'send'])
+  })
+  .use(middleware.auth())
+
+// Webhook routes (public - called by Resend)
 router.post('/webhooks/inbound-email', [WebhooksController, 'inboundEmail'])

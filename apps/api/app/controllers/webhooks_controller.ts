@@ -1,6 +1,8 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import emitter from '@adonisjs/core/services/emitter'
-import env from '#start/env'
+import Account from '#models/account'
+import Email from '#models/email'
+import { DateTime } from 'luxon'
 
 export default class WebhooksController {
   /**
@@ -33,22 +35,41 @@ export default class WebhooksController {
       if (payload.type === 'email.received' && payload.data) {
         const emailId = payload.data.email_id
 
+        // Extract the domain from the "to" address to find the account
+        const toAddresses = Array.isArray(payload.data.to) ? payload.data.to : [payload.data.to]
+        const primaryTo = toAddresses[0]
+        const domain = primaryTo.split('@')[1]
+
+        // Find the account by domain
+        const account = await Account.query().where('domain', domain).first()
+
+        if (!account) {
+          console.error(`No account found for domain: ${domain}`)
+          return response.status(404).json({
+            success: false,
+            message: `No account configured for domain: ${domain}`,
+          })
+        }
+
         // Fetch the full email content from Resend Inbound API
         let emailBody = { html: '', text: 'Email body not available' }
 
         try {
-          // Use the correct endpoint for inbound emails
+          // Use the correct endpoint for inbound emails with account's API key
           const resendResponse = await fetch(
             `https://api.resend.com/emails/receiving/${emailId}`,
             {
               headers: {
-                Authorization: `Bearer ${env.get('RESEND_API_KEY')}`,
+                Authorization: `Bearer ${account.resendApiKey}`,
               },
             }
           )
 
           if (resendResponse.ok) {
-            const fullEmail = await resendResponse.json()
+            const fullEmail = (await resendResponse.json()) as {
+              html?: string
+              text?: string
+            }
             console.log('Fetched inbound email:', fullEmail)
             emailBody = {
               html: fullEmail.html || '',
@@ -61,24 +82,56 @@ export default class WebhooksController {
           console.error('Error fetching email content:', fetchError)
         }
 
-        const emailData = {
+        // Extract the user email from the "to" address (before @domain)
+        const userEmail = primaryTo.split('@')[0]
+
+        // Find the user if they exist in this account
+        const user = await account
+          .related('users')
+          .query()
+          .where('email', 'like', `${userEmail}%`)
+          .first()
+
+        // Save email to database
+        const email = await Email.create({
+          accountId: account.id,
+          userId: user?.id || null,
+          direction: 'inbound',
+          emailId: payload.data.email_id,
+          messageId: payload.data.message_id,
           from: payload.data.from,
-          to: Array.isArray(payload.data.to) ? payload.data.to.join(', ') : payload.data.to,
+          to: toAddresses.join(', '),
+          cc: payload.data.cc ? payload.data.cc.join(', ') : null,
+          bcc: payload.data.bcc ? payload.data.bcc.join(', ') : null,
           subject: payload.data.subject,
           html: emailBody.html,
           text: emailBody.text,
-          email_id: payload.data.email_id,
-          message_id: payload.data.message_id,
-          created_at: payload.data.created_at,
-          attachments: payload.data.attachments || [],
-          cc: payload.data.cc || [],
-          bcc: payload.data.bcc || [],
+          attachments: payload.data.attachments || null,
+          headers: null,
+          emailCreatedAt: DateTime.fromISO(payload.data.created_at),
+        })
+
+        const emailData = {
+          id: email.id,
+          from: email.from,
+          to: email.to,
+          subject: email.subject,
+          html: email.html,
+          text: email.text,
+          email_id: email.emailId,
+          message_id: email.messageId,
+          created_at: email.emailCreatedAt?.toISO(),
+          attachments: email.attachments || [],
+          cc: email.cc?.split(', ') || [],
+          bcc: email.bcc?.split(', ') || [],
+          accountId: email.accountId,
+          userId: email.userId,
         }
 
         // Emit event for real-time updates (SSE)
         emitter.emit('email:received', emailData)
 
-        console.log('Email processed and emitted:', emailData)
+        console.log('Email saved and emitted:', emailData)
       }
 
       return response.json({

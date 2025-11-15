@@ -34,5 +34,27 @@ export default await Env.create(new URL('../', import.meta.url), {
   | Variables for configuring session package
   |----------------------------------------------------------
   */
-  SESSION_DRIVER: Env.schema.enum(['cookie', 'memory'] as const)
+  SESSION_DRIVER: Env.schema.enum(['cookie', 'memory'] as const),
+
+  /*
+  |----------------------------------------------------------
+  | Variables for configuring mail
+  |----------------------------------------------------------
+  */
+  RESEND_API_KEY: Env.schema.string.optional(),
+  MAIL_FROM_ADDRESS: Env.schema.string.optional(),
+  MAIL_FROM_NAME: Env.schema.string.optional(),
+  MAIL_REPLY_TO_ADDRESS: Env.schema.string.optional(),
+  MAIL_REPLY_TO_NAME: Env.schema.string.optional(),
+
+  /*
+  |----------------------------------------------------------
+  | Variables for bootstrapping the initial account
+  |----------------------------------------------------------
+  */
+  BOOTSTRAP_DOMAIN: Env.schema.string.optional(),
+  BOOTSTRAP_ACCOUNT_NAME: Env.schema.string.optional(),
+  BOOTSTRAP_ADMIN_EMAIL: Env.schema.string.optional(),
+  BOOTSTRAP_ADMIN_PASSWORD: Env.schema.string.optional(),
+  BOOTSTRAP_ADMIN_NAME: Env.schema.string.optional(),
 })
