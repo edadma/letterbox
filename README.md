@@ -1,19 +1,29 @@
 # Letterbox
 
-A modern monorepo application with React frontends and AdonisJS backend.
+A multi-tenant email system with role-based access control, built as a monorepo with React frontends and AdonisJS backend.
 
 ## Project Structure
 
 ```
 letterbox/
 ├── apps/
-│   ├── web/          # Main React frontend
-│   ├── admin/        # Admin panel
-│   └── api/          # AdonisJS backend
+│   ├── web/          # User email client (personal mailboxes)
+│   ├── admin/        # Account admin panel (manages account emails)
+│   ├── sysadmin/     # System admin panel (platform-wide management)
+│   └── api/          # AdonisJS backend with multi-tenant support
 ├── docker-compose.yml
 ├── init-db.sql
 └── package.json
 ```
+
+## Features
+
+- Multi-tenant email system with separate accounts
+- Role-based access control (user, admin, sysadmin)
+- Email sending and receiving via Resend
+- Real-time email updates with Server-Sent Events
+- Session-based authentication with HTTP-only cookies
+- Account-specific Resend API key management
 
 ## Tech Stack
 
@@ -47,7 +57,7 @@ letterbox/
 docker-compose up -d
 ```
 
-This will start PostgreSQL on port 5432 with:
+This will start PostgreSQL on port 5434 with:
 - Database: `letterbox`
 - User: `postgres` (dev) / `letterbox_user` (prod)
 - Password: `postgres` (dev) / configure in production
@@ -62,19 +72,29 @@ This installs dependencies for all workspaces (web, admin, api).
 
 ### 3. Configure Environment
 
-The API `.env` file has been created with defaults. Update if needed:
+Copy the example environment file and configure:
 
 ```bash
 cd apps/api
-# Edit .env file to add your RESEND_API_KEY and other configuration
+cp .env.example .env
+# Edit .env file to add your configuration
 ```
 
-### 4. Run Migrations
+Required environment variables:
+- `RESEND_API_KEY` - Your Resend API key (must have Full Access)
+- `BOOTSTRAP_DOMAIN` - Default account domain (e.g., letterbox.to)
+- `BOOTSTRAP_ADMIN_EMAIL` - Initial admin email
+- `BOOTSTRAP_ADMIN_PASSWORD` - Initial admin password
+
+### 4. Run Migrations & Seeders
 
 ```bash
 cd apps/api
-npm run migration:run
+node ace migration:run
+node ace db:seed
 ```
+
+This creates the database schema and bootstraps the initial account.
 
 ### 5. Start Development Servers
 
@@ -92,19 +112,36 @@ npm run api
 
 ### Web Frontend (Port 5173)
 
+User email client where individual users can:
+- Login with their email credentials
+- Send and receive emails
+- View only their personal emails
+
 ```bash
 npm run web
 ```
 
-The web app proxies `/api` requests to the backend at `http://localhost:3333`.
-
 ### Admin Panel (Port 5175)
+
+Account admin interface where account administrators can:
+- View all emails for their account
+- Manage account settings
+- See all users in their account
 
 ```bash
 npm run admin
 ```
 
-The admin panel also proxies `/api` requests to the backend.
+### Sysadmin Panel (Port 5176)
+
+System admin interface for platform-wide management where sysadmins can:
+- View all accounts across the platform
+- Monitor system activity
+- Manage platform settings
+
+```bash
+npm run sysadmin
+```
 
 ### API Backend (Port 3333)
 
@@ -112,18 +149,42 @@ The admin panel also proxies `/api` requests to the backend.
 npm run api
 ```
 
-API endpoints:
-- `GET /` - API info
-- `GET /events/stream` - Server-Sent Events stream
-- `POST /events/trigger` - Trigger an event
+Authentication endpoints:
+- `POST /auth/register-account` - Register new account with Resend API key
+- `POST /auth/register-user` - Register user within existing account
+- `POST /auth/login` - User login
+- `POST /auth/logout` - User logout
+- `GET /auth/me` - Get current user info
 
-### Database
+Email endpoints (protected):
+- `POST /mail/send` - Send email using account's Resend key
+- `GET /events/stream` - SSE stream for real-time email updates
+- `GET /events/recent-emails` - Get recent emails (filtered by role)
+
+Webhook endpoints (public):
+- `POST /webhooks/inbound-email` - Resend webhook for incoming emails
+
+### Database Commands
 
 #### Run Migrations
 
 ```bash
 cd apps/api
 node ace migration:run
+```
+
+#### Run Seeders
+
+```bash
+cd apps/api
+node ace db:seed
+```
+
+#### Fresh Migration (drops all tables and re-runs)
+
+```bash
+cd apps/api
+node ace migration:fresh
 ```
 
 #### Create a Migration
@@ -140,20 +201,43 @@ cd apps/api
 node ace make:seeder <seeder_name>
 ```
 
-#### Run Seeders
+## Architecture
 
-```bash
-cd apps/api
-node ace db:seed
-```
+### Multi-Tenant Design
 
-### Email Configuration
+Each account has:
+- Its own domain (e.g., `company.com`)
+- Its own Resend API key
+- Multiple users with different roles
 
-The backend is configured to use Resend for email. Add your API key to `apps/api/.env`:
+### User Roles
 
-```env
-RESEND_API_KEY=your_resend_api_key
-```
+- **user** - Regular user, sees only their own emails (emails sent to `their-name@domain`)
+- **admin** - Account administrator, sees all emails for their account
+- **sysadmin** - System administrator, sees all emails across all accounts
+
+### Email Flow
+
+**Outbound (Sending):**
+1. User composes email in web app
+2. API uses the account's Resend API key to send
+3. Email is saved to database with direction="outbound"
+
+**Inbound (Receiving):**
+1. Email arrives at Resend
+2. Resend sends webhook to `/webhooks/inbound-email`
+3. API fetches full email content from Resend
+4. Email is saved to database with direction="inbound"
+5. SSE broadcasts to connected clients (filtered by role)
+
+### Resend Configuration
+
+Each account needs:
+- A verified domain in Resend
+- A Resend API key with Full Access (for receiving emails)
+- Webhook configured to point to your API endpoint
+
+The bootstrap account uses environment variables from `.env`.
 
 ### Server-Sent Events
 
@@ -234,20 +318,27 @@ This creates type definitions that can be imported in the web and admin apps.
 ### Root Level
 - `npm run dev` - Start all apps in development
 - `npm run build` - Build all apps
-- `npm run web` - Start web app only
-- `npm run admin` - Start admin app only
-- `npm run api` - Start API only
+- `npm run web` - Start web app only (port 5173)
+- `npm run admin` - Start admin app only (port 5175)
+- `npm run sysadmin` - Start sysadmin app only (port 5176)
+- `npm run api` - Start API only (port 3333)
 
 ### API (apps/api)
 - `npm run dev` - Start dev server with HMR
 - `npm run build` - Build for production
 - `npm run start` - Start production server
 - `node ace migration:run` - Run migrations
+- `node ace migration:fresh` - Drop all tables and re-run migrations
 - `node ace db:seed` - Run seeders
 - `node ace make:migration <name>` - Create migration
 - `node ace make:seeder <name>` - Create seeder
 - `node ace make:controller <name>` - Create controller
 - `node ace make:model <name>` - Create model
+
+### Frontend Apps (web/admin)
+- `npm run dev` - Start Vite dev server
+- `npm run build` - Build for production
+- `npm run preview` - Preview production build
 
 ## License
 

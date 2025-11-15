@@ -5,13 +5,15 @@
   "workspaces": [
     "apps/web",
     "apps/admin",
+    "apps/sysadmin",
     "apps/api"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev -w apps/web\" \"npm run dev -w apps/admin\" \"npm run dev -w apps/api\"",
-    "build": "npm run build -w apps/web && npm run build -w apps/admin && npm run build -w apps/api",
+    "dev": "concurrently \"npm run dev -w apps/web\" \"npm run dev -w apps/admin\" \"npm run dev -w apps/sysadmin\" \"npm run dev -w apps/api\"",
+    "build": "npm run build -w apps/web && npm run build -w apps/admin && npm run build -w apps/sysadmin && npm run build -w apps/api",
     "web": "npm run dev -w apps/web",
     "admin": "npm run dev -w apps/admin",
+    "sysadmin": "npm run dev -w apps/sysadmin",
     "api": "npm run dev -w apps/api"
   },
   "devDependencies": {
