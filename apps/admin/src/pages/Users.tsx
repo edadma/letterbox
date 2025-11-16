@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useForm } from 'react-hook-form'
 
 interface User {
   id: number
@@ -13,18 +14,25 @@ interface Account {
   domain: string
 }
 
+interface CreateUserForm {
+  name: string
+  mailbox: string
+  password: string
+}
+
 export default function Users() {
   const [users, setUsers] = useState<User[]>([])
   const [account, setAccount] = useState<Account | null>(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [formData, setFormData] = useState({
-    name: '',
-    mailbox: '',
-    password: '',
-  })
   const [error, setError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+    reset,
+  } = useForm<CreateUserForm>()
 
   useEffect(() => {
     loadAccount()
@@ -57,15 +65,12 @@ export default function Users() {
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
+  const onSubmit = async (formData: CreateUserForm) => {
     if (!account) {
       setError('Account information not loaded')
       return
     }
 
-    setSubmitting(true)
     setError('')
 
     try {
@@ -86,15 +91,13 @@ export default function Users() {
 
       if (data.success) {
         setShowModal(false)
-        setFormData({ name: '', mailbox: '', password: '' })
+        reset()
         loadUsers()
       } else {
         setError(data.message || 'Failed to create user')
       }
     } catch (err) {
       setError('Failed to create user')
-    } finally {
-      setSubmitting(false)
     }
   }
 
@@ -164,7 +167,7 @@ export default function Users() {
         <div className="modal modal-open">
           <div className="modal-box">
             <h3 className="font-bold text-lg mb-4">Create New User</h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div className="form-control">
                 <label className="label">
                   <span className="label-text">Name</span>
@@ -172,11 +175,14 @@ export default function Users() {
                 <input
                   type="text"
                   placeholder="John Doe"
-                  className="input input-bordered"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
+                  className={`input input-bordered ${errors.name ? 'input-error' : ''}`}
+                  {...register('name', { required: 'Name is required' })}
                 />
+                {errors.name && (
+                  <label className="label">
+                    <span className="label-text-alt text-error">{errors.name.message}</span>
+                  </label>
+                )}
               </div>
 
               <div className="form-control">
@@ -187,13 +193,22 @@ export default function Users() {
                   <input
                     type="text"
                     placeholder="john"
-                    className="input input-bordered join-item flex-1"
-                    value={formData.mailbox}
-                    onChange={(e) => setFormData({ ...formData, mailbox: e.target.value })}
-                    required
+                    className={`input input-bordered join-item flex-1 ${errors.mailbox ? 'input-error' : ''}`}
+                    {...register('mailbox', {
+                      required: 'Mailbox is required',
+                      pattern: {
+                        value: /^[a-zA-Z0-9._-]+$/,
+                        message: 'Only letters, numbers, dots, hyphens, and underscores allowed',
+                      },
+                    })}
                   />
                   <span className="btn join-item no-animation">@{account.domain}</span>
                 </div>
+                {errors.mailbox && (
+                  <label className="label">
+                    <span className="label-text-alt text-error">{errors.mailbox.message}</span>
+                  </label>
+                )}
               </div>
 
               <div className="form-control">
@@ -203,11 +218,20 @@ export default function Users() {
                 <input
                   type="password"
                   placeholder="Password"
-                  className="input input-bordered"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  required
+                  className={`input input-bordered ${errors.password ? 'input-error' : ''}`}
+                  {...register('password', {
+                    required: 'Password is required',
+                    minLength: {
+                      value: 8,
+                      message: 'Password must be at least 8 characters',
+                    },
+                  })}
                 />
+                {errors.password && (
+                  <label className="label">
+                    <span className="label-text-alt text-error">{errors.password.message}</span>
+                  </label>
+                )}
               </div>
 
               {error && (
@@ -222,14 +246,14 @@ export default function Users() {
                   className="btn"
                   onClick={() => {
                     setShowModal(false)
-                    setFormData({ name: '', mailbox: '', password: '' })
+                    reset()
                     setError('')
                   }}
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={submitting}>
-                  {submitting ? 'Creating...' : 'Create User'}
+                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                  {isSubmitting ? 'Creating...' : 'Create User'}
                 </button>
               </div>
             </form>
