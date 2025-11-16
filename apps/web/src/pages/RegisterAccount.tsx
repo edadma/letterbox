@@ -37,7 +37,7 @@ export default function RegisterAccount() {
       } else {
         setError(data.message || 'Registration failed')
       }
-    } catch (err) {
+    } catch {
       setError('Failed to register account')
     } finally {
       setLoading(false)

@@ -10,7 +10,7 @@ interface InboundEmail {
   text?: string
   email_id?: string
   created_at?: string
-  attachments?: any[]
+  attachments?: unknown[]
   direction?: string
 }
 

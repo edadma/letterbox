@@ -38,7 +38,7 @@ export default function Login() {
       } else {
         setError(data.message || 'Login failed')
       }
-    } catch (err) {
+    } catch {
       setError('Failed to login')
     }
   }

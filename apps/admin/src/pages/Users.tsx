@@ -96,7 +96,7 @@ export default function Users() {
       } else {
         setError(data.message || 'Failed to create user')
       }
-    } catch (err) {
+    } catch {
       setError('Failed to create user')
     }
   }
