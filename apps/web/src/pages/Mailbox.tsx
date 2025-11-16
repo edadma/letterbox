@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useForm } from 'react-hook-form'
 
 interface InboundEmail {
   id: number
@@ -27,16 +28,25 @@ interface User {
   }
 }
 
+interface SendEmailForm {
+  to: string
+  subject: string
+  body: string
+}
+
 export default function Mailbox() {
   const navigate = useNavigate()
   const [user, setUser] = useState<User | null>(null)
-  const [to, setTo] = useState('')
-  const [subject, setSubject] = useState('')
-  const [body, setBody] = useState('')
-  const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [receivedEmails, setReceivedEmails] = useState<InboundEmail[]>([])
   const [authChecked, setAuthChecked] = useState(false)
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+    reset,
+  } = useForm<SendEmailForm>()
 
   // Check authentication on mount
   useEffect(() => {
@@ -91,9 +101,7 @@ export default function Mailbox() {
     }
   }, [authChecked, user])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
+  const onSubmit = async (formData: SendEmailForm) => {
     setMessage('')
 
     try {
@@ -102,16 +110,14 @@ export default function Mailbox() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ to, subject, body }),
+        body: JSON.stringify(formData),
       })
 
       const data = await response.json()
 
       if (data.success) {
         setMessage('Email sent successfully!')
-        setTo('')
-        setSubject('')
-        setBody('')
+        reset()
       } else {
         console.error('Error response:', data)
         setMessage(`Error: ${data.message || data.error || 'Unknown error'}`)
@@ -119,8 +125,6 @@ export default function Mailbox() {
     } catch (error) {
       console.error('Fetch error:', error)
       setMessage('Failed to send email. Please try again.')
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -163,19 +167,34 @@ export default function Mailbox() {
           <div className="card-body">
             <h2 className="card-title text-2xl mb-4">Send Email</h2>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div className="form-control">
                 <label className="label">
-                  <span className="label-text">To Address</span>
+                  <span className="label-text">To</span>
                 </label>
                 <input
-                  type="email"
+                  type="text"
                   placeholder="recipient@example.com"
-                  className="input input-bordered"
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  required
+                  className={`input input-bordered ${errors.to ? 'input-error' : ''}`}
+                  {...register('to', {
+                    required: 'Recipient is required',
+                    validate: (value) => {
+                      // Allow formats: email@domain.com or "Name" <email@domain.com> or Name <email@domain.com>
+                      const emailOnly = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i
+                      const nameAndEmail = /^.+\s*<[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}>$/i
+
+                      if (emailOnly.test(value.trim()) || nameAndEmail.test(value.trim())) {
+                        return true
+                      }
+                      return 'Invalid format. Use: email@domain.com or Name <email@domain.com>'
+                    },
+                  })}
                 />
+                {errors.to && (
+                  <label className="label">
+                    <span className="label-text-alt text-error">{errors.to.message}</span>
+                  </label>
+                )}
               </div>
 
               <div className="form-control">
@@ -185,11 +204,14 @@ export default function Mailbox() {
                 <input
                   type="text"
                   placeholder="Email subject"
-                  className="input input-bordered"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  required
+                  className={`input input-bordered ${errors.subject ? 'input-error' : ''}`}
+                  {...register('subject', { required: 'Subject is required' })}
                 />
+                {errors.subject && (
+                  <label className="label">
+                    <span className="label-text-alt text-error">{errors.subject.message}</span>
+                  </label>
+                )}
               </div>
 
               <div className="form-control">
@@ -197,12 +219,15 @@ export default function Mailbox() {
                   <span className="label-text">Body</span>
                 </label>
                 <textarea
-                  className="textarea textarea-bordered h-32"
+                  className={`textarea textarea-bordered h-32 ${errors.body ? 'textarea-error' : ''}`}
                   placeholder="Email body..."
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  required
+                  {...register('body', { required: 'Body is required' })}
                 ></textarea>
+                {errors.body && (
+                  <label className="label">
+                    <span className="label-text-alt text-error">{errors.body.message}</span>
+                  </label>
+                )}
               </div>
 
               {message && (
@@ -212,8 +237,8 @@ export default function Mailbox() {
               )}
 
               <div className="card-actions justify-end">
-                <button type="submit" className={`btn btn-primary ${loading ? 'loading' : ''}`} disabled={loading}>
-                  {loading ? 'Sending...' : 'Send Email'}
+                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                  {isSubmitting ? 'Sending...' : 'Send Email'}
                 </button>
               </div>
             </form>

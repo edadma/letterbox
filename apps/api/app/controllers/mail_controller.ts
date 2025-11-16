@@ -10,7 +10,7 @@ export default class MailController {
   async send({ request, response, auth }: HttpContext) {
     const validator = vine.compile(
       vine.object({
-        to: vine.string().email(),
+        to: vine.string().trim().minLength(1),
         subject: vine.string().minLength(1),
         body: vine.string().minLength(1),
       })
@@ -40,6 +40,17 @@ export default class MailController {
 
       const data = await request.validateUsing(validator)
 
+      // Validate the 'to' field format (email or Name <email>)
+      const emailOnly = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i
+      const nameAndEmail = /^.+\s*<[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}>$/i
+
+      if (!emailOnly.test(data.to) && !nameAndEmail.test(data.to)) {
+        return response.status(400).json({
+          success: false,
+          message: 'Invalid recipient format. Use: email@domain.com or Name <email@domain.com>',
+        })
+      }
+
       // Create Resend client with account's API key
       const resend = new Resend(account.resendApiKey)
 
@@ -62,10 +73,10 @@ export default class MailController {
         </html>
       `
 
-      // Send email via Resend
+      // Send email via Resend - Resend accepts the Name <email> format directly
       const result = await resend.emails.send({
         from: `${user.name} <${account.defaultFromAddress}>`,
-        to: data.to,
+        to: data.to, // This can now be "Name <email@domain.com>" or just "email@domain.com"
         subject: data.subject,
         html: htmlContent,
       })
