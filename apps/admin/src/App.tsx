@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import Dashboard from './pages/Dashboard'
 import Users from './pages/Users'
+import Login from './pages/Login'
 
 const queryClient = new QueryClient()
 
@@ -58,16 +60,61 @@ function Layout({ children }: { children: React.ReactNode }) {
   )
 }
 
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await fetch('/api/auth/me')
+        const data = await response.json()
+        setIsAuthenticated(data.success && (data.user.role === 'admin' || data.user.role === 'sysadmin'))
+      } catch {
+        setIsAuthenticated(false)
+      }
+    }
+
+    checkAuth()
+  }, [])
+
+  if (isAuthenticated === null) {
+    return <div className="min-h-screen bg-base-200 flex items-center justify-center">Loading...</div>
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />
+  }
+
+  return <>{children}</>
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/users" element={<Users />} />
-          </Routes>
-        </Layout>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Dashboard />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/users"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Users />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
       </BrowserRouter>
     </QueryClientProvider>
   )

@@ -1,0 +1,62 @@
+# API
+api.letterbox.to {
+    reverse_proxy localhost:3333 {
+        flush_interval -1
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Real-IP {remote}
+    }
+}
+
+# Web App
+letterbox.to {
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy localhost:3333 {
+            flush_interval -1
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Real-IP {remote}
+        }
+    }
+
+    handle {
+        root * /var/www/letterbox/web
+        try_files {path} /index.html
+        file_server
+    }
+}
+
+# Admin Panel
+admin.letterbox.to {
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy localhost:3333 {
+            flush_interval -1
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Real-IP {remote}
+        }
+    }
+
+    handle {
+        root * /var/www/letterbox/admin
+        try_files {path} /index.html
+        file_server
+    }
+}
+
+# Sysadmin Panel
+sysadmin.letterbox.to {
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy localhost:3333 {
+            flush_interval -1
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Real-IP {remote}
+        }
+    }
+
+    handle {
+        root * /var/www/letterbox/sysadmin
+        try_files {path} /index.html
+        file_server
+    }
+}

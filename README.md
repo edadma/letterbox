@@ -428,25 +428,60 @@ api.yourdomain.com {
 
 # Web App
 yourdomain.com {
-    root * /var/www/letterbox/web
-    file_server
-    try_files {path} /index.html
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy localhost:3333 {
+            flush_interval -1
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Real-IP {remote}
+        }
+    }
+
+    handle {
+        root * /var/www/letterbox/web
+        try_files {path} /index.html
+        file_server
+    }
 }
 
 # Admin Panel
 admin.yourdomain.com {
-    root * /var/www/letterbox/admin
-    file_server
-    try_files {path} /index.html
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy localhost:3333 {
+            flush_interval -1
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Real-IP {remote}
+        }
+    }
+
+    handle {
+        root * /var/www/letterbox/admin
+        try_files {path} /index.html
+        file_server
+    }
 }
 
 # Sysadmin Panel
 sysadmin.yourdomain.com {
-    root * /var/www/letterbox/sysadmin
-    file_server
-    try_files {path} /index.html
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy localhost:3333 {
+            flush_interval -1
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Real-IP {remote}
+        }
+    }
+
+    handle {
+        root * /var/www/letterbox/sysadmin
+        try_files {path} /index.html
+        file_server
+    }
 }
 ```
+
+**Important:** Each SPA (web, admin, sysadmin) needs separate `handle` blocks to properly route API requests. The first `handle /api/*` block strips the `/api` prefix and proxies to the backend, while the second `handle` block serves the static files with SPA fallback routing.
 
 Restart Caddy:
 ```bash
