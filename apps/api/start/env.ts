@@ -65,4 +65,12 @@ export default await Env.create(new URL('../', import.meta.url), {
   */
   SYSADMIN_EMAIL: Env.schema.string.optional(),
   SYSADMIN_PASSWORD: Env.schema.string.optional(),
+
+  /*
+  |----------------------------------------------------------
+  | Variables for Redis (production SSE)
+  |----------------------------------------------------------
+  */
+  REDIS_HOST: Env.schema.string.optional({ format: 'host' }),
+  REDIS_PORT: Env.schema.number.optional(),
 })

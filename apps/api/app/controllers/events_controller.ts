@@ -1,30 +1,12 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import emitter from '@adonisjs/core/services/emitter'
 import Email from '#models/email'
-
-// Store connected SSE clients with their user info
-const clients = new Map<any, { userId: number; accountId: number; role: string }>()
+import { broadcastEmail, addClient, removeClient } from '#services/redis_broadcaster'
 
 // Listen for email received events
 emitter.on('email:received', (emailData) => {
-  // Broadcast to connected clients based on their permissions
-  const message = JSON.stringify({ type: 'email:received', data: emailData })
-
-  clients.forEach((userInfo, client) => {
-    try {
-      // Check if this client should receive this email
-      const shouldReceive =
-        userInfo.role === 'sysadmin' || // Sysadmin sees all
-        (userInfo.role === 'admin' && userInfo.accountId === emailData.accountId) || // Admin sees all in their account
-        (userInfo.role === 'user' && userInfo.userId === emailData.userId) // User sees only their emails
-
-      if (shouldReceive) {
-        client.write(`data: ${message}\n\n`)
-      }
-    } catch (error) {
-      console.error('Error writing to SSE client:', error)
-    }
-  })
+  // Broadcast using Redis in production, in-memory in development
+  broadcastEmail(emailData)
 })
 
 export default class EventsController {
@@ -51,7 +33,7 @@ export default class EventsController {
     })
 
     // Add client with user info
-    clients.set(response.response, {
+    addClient(response.response, {
       userId: user.id,
       accountId: user.accountId,
       role: user.role,
@@ -70,7 +52,7 @@ export default class EventsController {
     // Clean up on connection close
     response.response.on('close', () => {
       clearInterval(heartbeatInterval)
-      clients.delete(response.response)
+      removeClient(response.response)
     })
   }
 

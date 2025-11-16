@@ -266,28 +266,267 @@ npm run build -w apps/admin
 npm run build -w apps/api
 ```
 
-### Production Deployment
+### Production Deployment on VPS
 
-#### API
+This guide covers deploying to an Ubuntu 24.04 LTS VPS with Caddy, PM2, PostgreSQL, and Redis.
+
+#### Prerequisites
+
+- Ubuntu 24.04 LTS server
+- Domain with DNS pointing to your VPS
+- SSH access to the server
+
+#### 1. Initial Server Setup
 
 ```bash
-cd apps/api
-npm run build
-cd build
-npm ci --omit="dev"
-node bin/server.js
+# Update system
+sudo apt update
+sudo apt dist-upgrade -y
+
+# Install build tools
+sudo apt install -y build-essential
+
+# Install Node.js via n
+curl -L https://bit.ly/n-install | bash
+source ~/.bashrc
+n lts
+
+# Install PostgreSQL
+sudo apt install -y postgresql postgresql-contrib
+
+# Install Redis
+sudo apt install -y redis-server
+
+# Install PM2
+sudo npm install -g pm2
+
+# Install Caddy
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update
+sudo apt install -y caddy
 ```
 
-Update production environment variables:
-- Set strong `APP_KEY`
-- Configure `DB_USER=letterbox_user`
-- Set strong database password
-- Add production `RESEND_API_KEY`
+#### 2. Database Setup
 
-#### Frontend Apps
+```bash
+# Create database and user
+sudo -u postgres psql << EOF
+CREATE DATABASE letterbox;
+CREATE USER letterbox_user WITH PASSWORD 'YOUR_SECURE_PASSWORD_HERE';
+GRANT ALL PRIVILEGES ON DATABASE letterbox TO letterbox_user;
+ALTER DATABASE letterbox OWNER TO letterbox_user;
+\c letterbox
+GRANT ALL ON SCHEMA public TO letterbox_user;
+\q
+EOF
 
-The web and admin apps are static builds in `apps/web/dist` and `apps/admin/dist`.
-Deploy to any static hosting service (Vercel, Netlify, Cloudflare Pages, etc.).
+# Start and enable Redis
+sudo systemctl start redis-server
+sudo systemctl enable redis-server
+
+# Verify Redis
+redis-cli ping  # Should return: PONG
+```
+
+#### 3. Application Directory
+
+```bash
+# Create application directory
+sudo mkdir -p /var/www/letterbox
+sudo chown -R $USER:$USER /var/www/letterbox
+```
+
+#### 4. Environment Configuration
+
+Create `/var/www/letterbox/api/.env`:
+
+```env
+TZ=UTC
+PORT=3333
+HOST=localhost
+LOG_LEVEL=info
+APP_KEY=YOUR_GENERATED_APP_KEY_HERE
+NODE_ENV=production
+
+# Database Configuration
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_USER=letterbox_user
+DB_PASSWORD=YOUR_DATABASE_PASSWORD_HERE
+DB_DATABASE=letterbox
+
+# Redis Configuration (for production SSE)
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+
+# Session
+SESSION_DRIVER=cookie
+
+# Mail Configuration
+RESEND_API_KEY=YOUR_RESEND_API_KEY_HERE
+MAIL_FROM_ADDRESS=noreply@yourdomain.com
+MAIL_FROM_NAME=Letterbox
+MAIL_REPLY_TO_ADDRESS=noreply@yourdomain.com
+MAIL_REPLY_TO_NAME=Letterbox
+
+# Bootstrap Account
+BOOTSTRAP_DOMAIN=yourdomain.com
+BOOTSTRAP_ACCOUNT_NAME=Letterbox
+BOOTSTRAP_ADMIN_EMAIL=admin@yourdomain.com
+BOOTSTRAP_ADMIN_PASSWORD=CHANGE_THIS_PASSWORD
+BOOTSTRAP_ADMIN_NAME=Admin
+
+# Sysadmin Credentials
+SYSADMIN_EMAIL=sysadmin@yourdomain.com
+SYSADMIN_PASSWORD=CHANGE_THIS_PASSWORD
+```
+
+Generate a strong `APP_KEY`:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+#### 5. PM2 Configuration
+
+Create `/var/www/letterbox/ecosystem.config.js`:
+
+```javascript
+module.exports = {
+  apps: [{
+    name: 'letterbox-api',
+    script: './api/build/bin/server.js',
+    cwd: '/var/www/letterbox',
+    instances: 1,
+    exec_mode: 'fork',  // Use fork for SSE compatibility
+    env: {
+      NODE_ENV: 'production',
+      PORT: 3333
+    },
+    error_file: '/var/www/letterbox/logs/api-error.log',
+    out_file: '/var/www/letterbox/logs/api-out.log',
+    log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+    merge_logs: true,
+  }]
+}
+```
+
+#### 6. Caddy Configuration
+
+Create `/etc/caddy/Caddyfile`:
+
+```
+# API
+api.yourdomain.com {
+    reverse_proxy localhost:3333 {
+        flush_interval -1
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Real-IP {remote}
+    }
+}
+
+# Web App
+yourdomain.com {
+    root * /var/www/letterbox/web
+    file_server
+    try_files {path} /index.html
+}
+
+# Admin Panel
+admin.yourdomain.com {
+    root * /var/www/letterbox/admin
+    file_server
+    try_files {path} /index.html
+}
+
+# Sysadmin Panel
+sysadmin.yourdomain.com {
+    root * /var/www/letterbox/sysadmin
+    file_server
+    try_files {path} /index.html
+}
+```
+
+Restart Caddy:
+```bash
+sudo systemctl reload caddy
+```
+
+#### 7. Build and Deploy
+
+On your local machine:
+
+```bash
+# Build all apps
+npm run build
+
+# Copy to VPS
+scp -r apps/web/dist user@your-vps:/var/www/letterbox/web
+scp -r apps/admin/dist user@your-vps:/var/www/letterbox/admin
+scp -r apps/sysadmin/dist user@your-vps:/var/www/letterbox/sysadmin
+scp -r apps/api/build user@your-vps:/var/www/letterbox/api
+```
+
+On the VPS:
+
+```bash
+# Install production dependencies
+cd /var/www/letterbox/api/build
+npm ci --omit="dev"
+
+# Run migrations
+cd /var/www/letterbox/api/build
+node ace migration:run
+node ace db:seed
+
+# Start with PM2
+cd /var/www/letterbox
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup  # Follow the instructions to enable auto-start
+```
+
+#### 8. Verify Deployment
+
+```bash
+# Check PM2 status
+pm2 status
+pm2 logs letterbox-api
+
+# Check Caddy
+sudo systemctl status caddy
+
+# Check Redis
+redis-cli ping
+
+# Check PostgreSQL
+sudo -u postgres psql -d letterbox -c "\dt"
+```
+
+Visit your domains:
+- https://yourdomain.com - Web app
+- https://admin.yourdomain.com - Admin panel
+- https://sysadmin.yourdomain.com - Sysadmin panel
+- https://api.yourdomain.com - API
+
+#### 9. Resend Webhook Configuration
+
+Configure Resend webhook to point to:
+```
+https://api.yourdomain.com/webhooks/inbound-email
+```
+
+#### Updating the Application
+
+```bash
+# On local machine
+npm run build
+# scp files to VPS
+
+# On VPS
+pm2 restart letterbox-api
+```
 
 ## Docker
 
