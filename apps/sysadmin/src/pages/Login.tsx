@@ -1,18 +1,23 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useForm } from 'react-hook-form'
+
+interface LoginForm {
+  email: string
+  password: string
+}
 
 export default function Login() {
   const navigate = useNavigate()
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  })
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginForm>()
+
+  const onSubmit = async (formData: LoginForm) => {
     setError('')
 
     try {
@@ -35,8 +40,6 @@ export default function Login() {
       }
     } catch (err) {
       setError('Failed to login')
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -46,7 +49,7 @@ export default function Login() {
         <div className="card-body">
           <h2 className="card-title text-2xl mb-4">System Admin Login</h2>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="form-control">
               <label className="label">
                 <span className="label-text">Email</span>
@@ -54,11 +57,20 @@ export default function Login() {
               <input
                 type="email"
                 placeholder="sysadmin@example.com"
-                className="input input-bordered"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                required
+                className={`input input-bordered ${errors.email ? 'input-error' : ''}`}
+                {...register('email', {
+                  required: 'Email is required',
+                  pattern: {
+                    value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                    message: 'Invalid email address',
+                  },
+                })}
               />
+              {errors.email && (
+                <label className="label">
+                  <span className="label-text-alt text-error">{errors.email.message}</span>
+                </label>
+              )}
             </div>
 
             <div className="form-control">
@@ -68,11 +80,14 @@ export default function Login() {
               <input
                 type="password"
                 placeholder="Password"
-                className="input input-bordered"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                required
+                className={`input input-bordered ${errors.password ? 'input-error' : ''}`}
+                {...register('password', { required: 'Password is required' })}
               />
+              {errors.password && (
+                <label className="label">
+                  <span className="label-text-alt text-error">{errors.password.message}</span>
+                </label>
+              )}
             </div>
 
             {error && (
@@ -82,8 +97,8 @@ export default function Login() {
             )}
 
             <div className="card-actions justify-end">
-              <button type="submit" className={`btn btn-primary ${loading ? 'loading' : ''}`} disabled={loading}>
-                {loading ? 'Logging in...' : 'Login'}
+              <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                {isSubmitting ? 'Logging in...' : 'Login'}
               </button>
             </div>
           </form>
