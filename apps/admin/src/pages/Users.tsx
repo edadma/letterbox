@@ -9,21 +9,39 @@ interface User {
   createdAt: string
 }
 
+interface Account {
+  domain: string
+}
+
 export default function Users() {
   const [users, setUsers] = useState<User[]>([])
+  const [account, setAccount] = useState<Account | null>(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
-    email: '',
+    mailbox: '',
     password: '',
   })
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
+    loadAccount()
     loadUsers()
   }, [])
+
+  const loadAccount = async () => {
+    try {
+      const response = await fetch('/api/auth/me')
+      const data = await response.json()
+      if (data.success && data.user) {
+        setAccount({ domain: data.user.account.domain })
+      }
+    } catch (error) {
+      console.error('Failed to load account:', error)
+    }
+  }
 
   const loadUsers = async () => {
     try {
@@ -41,23 +59,34 @@ export default function Users() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (!account) {
+      setError('Account information not loaded')
+      return
+    }
+
     setSubmitting(true)
     setError('')
 
     try {
+      const email = `${formData.mailbox}@${account.domain}`
       const response = await fetch('/api/auth/register-user', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          name: formData.name,
+          email: email,
+          password: formData.password,
+        }),
       })
 
       const data = await response.json()
 
       if (data.success) {
         setShowModal(false)
-        setFormData({ name: '', email: '', password: '' })
+        setFormData({ name: '', mailbox: '', password: '' })
         loadUsers()
       } else {
         setError(data.message || 'Failed to create user')
@@ -131,7 +160,7 @@ export default function Users() {
         </div>
       )}
 
-      {showModal && (
+      {showModal && account && (
         <div className="modal modal-open">
           <div className="modal-box">
             <h3 className="font-bold text-lg mb-4">Create New User</h3>
@@ -152,16 +181,19 @@ export default function Users() {
 
               <div className="form-control">
                 <label className="label">
-                  <span className="label-text">Email</span>
+                  <span className="label-text">Mailbox</span>
                 </label>
-                <input
-                  type="email"
-                  placeholder="user@example.com"
-                  className="input input-bordered"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
-                />
+                <div className="join w-full">
+                  <input
+                    type="text"
+                    placeholder="john"
+                    className="input input-bordered join-item flex-1"
+                    value={formData.mailbox}
+                    onChange={(e) => setFormData({ ...formData, mailbox: e.target.value })}
+                    required
+                  />
+                  <span className="btn join-item no-animation">@{account.domain}</span>
+                </div>
               </div>
 
               <div className="form-control">
@@ -190,7 +222,7 @@ export default function Users() {
                   className="btn"
                   onClick={() => {
                     setShowModal(false)
-                    setFormData({ name: '', email: '', password: '' })
+                    setFormData({ name: '', mailbox: '', password: '' })
                     setError('')
                   }}
                 >
