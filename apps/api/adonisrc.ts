@@ -3,6 +3,21 @@ import { defineConfig } from '@adonisjs/core/app'
 export default defineConfig({
   /*
   |--------------------------------------------------------------------------
+  | Commands
+  |--------------------------------------------------------------------------
+  |
+  | List of meta files to copy to the build folder.
+  |
+  */
+  metaFiles: [
+    {
+      pattern: 'package-lock.json',
+      reloadServer: false,
+    },
+  ],
+
+  /*
+  |--------------------------------------------------------------------------
   | Experimental flags
   |--------------------------------------------------------------------------
   |

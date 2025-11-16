@@ -22,7 +22,7 @@ export default function Accounts() {
   const navigate = useNavigate()
   const [user, setUser] = useState<User | null>(null)
   const [accounts, setAccounts] = useState<Account[]>([])
-  const [loading, setLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(true)
   const [authChecked, setAuthChecked] = useState(false)
 
   useEffect(() => {
@@ -52,7 +52,7 @@ export default function Accounts() {
     } catch (error) {
       console.error('Failed to load accounts:', error)
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
   }
 
@@ -97,7 +97,7 @@ export default function Accounts() {
               {accounts.length > 0 && <span className="badge badge-primary">{accounts.length}</span>}
             </h2>
 
-            {loading ? (
+            {isLoading ? (
               <div className="flex justify-center py-8">
                 <span className="loading loading-spinner loading-lg"></span>
               </div>
