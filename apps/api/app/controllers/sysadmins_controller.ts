@@ -1,5 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import Account from '#models/account'
+import db from '@adonisjs/lucid/services/db'
 
 export default class SysadminsController {
   /**
@@ -19,22 +20,37 @@ export default class SysadminsController {
 
       const accounts = await Account.query().orderBy('created_at', 'desc')
 
-      const formattedAccounts = accounts.map((account) => ({
-        id: account.id,
-        name: account.name,
-        domain: account.domain,
-        defaultFromAddress: account.defaultFromAddress,
-        defaultFromName: account.defaultFromName,
-        defaultReplyToAddress: account.defaultReplyToAddress,
-        defaultReplyToName: account.defaultReplyToName,
-        isActive: account.isActive,
-        createdAt: account.createdAt.toISO(),
-        updatedAt: account.updatedAt.toISO(),
-      }))
+      // Get email counts for each account
+      const accountsWithCounts = await Promise.all(
+        accounts.map(async (account) => {
+          const sentCount = await db
+            .from('emails')
+            .where('account_id', account.id)
+            .where('direction', 'outbound')
+            .count('* as total')
+
+          const receivedCount = await db
+            .from('emails')
+            .where('account_id', account.id)
+            .where('direction', 'inbound')
+            .count('* as total')
+
+          return {
+            id: account.id,
+            name: account.name,
+            domain: account.domain,
+            isActive: account.isActive,
+            sentCount: Number(sentCount[0].total),
+            receivedCount: Number(receivedCount[0].total),
+            createdAt: account.createdAt.toISO(),
+            updatedAt: account.updatedAt.toISO(),
+          }
+        })
+      )
 
       return response.json({
         success: true,
-        accounts: formattedAccounts,
+        accounts: accountsWithCounts,
       })
     } catch (error) {
       console.error('Get accounts error:', error)

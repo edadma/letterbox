@@ -5,9 +5,9 @@ interface Account {
   id: number
   name: string
   domain: string
-  defaultFromAddress: string
-  defaultFromName: string
   isActive: boolean
+  sentCount: number
+  receivedCount: number
   createdAt: string
 }
 
@@ -111,7 +111,8 @@ export default function Accounts() {
                       <th>ID</th>
                       <th>Name</th>
                       <th>Domain</th>
-                      <th>From Address</th>
+                      <th>Sent</th>
+                      <th>Received</th>
                       <th>Status</th>
                       <th>Created</th>
                     </tr>
@@ -126,10 +127,8 @@ export default function Accounts() {
                         <td>
                           <span className="badge badge-ghost">{account.domain}</span>
                         </td>
-                        <td>
-                          <div className="text-sm">{account.defaultFromAddress}</div>
-                          <div className="text-xs text-base-content/60">{account.defaultFromName}</div>
-                        </td>
+                        <td>{account.sentCount}</td>
+                        <td>{account.receivedCount}</td>
                         <td>
                           {account.isActive ? (
                             <span className="badge badge-success">Active</span>

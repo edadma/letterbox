@@ -60,5 +60,29 @@ export default class extends BaseSeeder {
         'Skipping admin user creation - BOOTSTRAP_ADMIN_EMAIL and/or BOOTSTRAP_ADMIN_PASSWORD not set'
       )
     }
+
+    // Create the sysadmin user if credentials provided
+    const sysadminEmail = env.get('SYSADMIN_EMAIL')
+    const sysadminPassword = env.get('SYSADMIN_PASSWORD')
+
+    if (sysadminEmail && sysadminPassword) {
+      const existingSysadmin = await User.query()
+        .where('account_id', account.id)
+        .where('email', sysadminEmail)
+        .first()
+
+      if (!existingSysadmin) {
+        const sysadmin = await User.create({
+          accountId: account.id,
+          email: sysadminEmail,
+          password: sysadminPassword,
+          name: 'System Admin',
+          role: 'sysadmin',
+          isActive: true,
+        })
+
+        console.log(`Created sysadmin user: ${sysadmin.email}`)
+      }
+    }
   }
 }

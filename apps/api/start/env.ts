@@ -57,4 +57,12 @@ export default await Env.create(new URL('../', import.meta.url), {
   BOOTSTRAP_ADMIN_EMAIL: Env.schema.string.optional(),
   BOOTSTRAP_ADMIN_PASSWORD: Env.schema.string.optional(),
   BOOTSTRAP_ADMIN_NAME: Env.schema.string.optional(),
+
+  /*
+  |----------------------------------------------------------
+  | Variables for sysadmin user
+  |----------------------------------------------------------
+  */
+  SYSADMIN_EMAIL: Env.schema.string.optional(),
+  SYSADMIN_PASSWORD: Env.schema.string.optional(),
 })

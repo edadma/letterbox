@@ -15,6 +15,7 @@ const EventsController = () => import('#controllers/events_controller')
 const MailController = () => import('#controllers/mail_controller')
 const WebhooksController = () => import('#controllers/webhooks_controller')
 const SysadminsController = () => import('#controllers/sysadmins_controller')
+const AdminsController = () => import('#controllers/admins_controller')
 
 router.get('/', async () => {
   return {
@@ -47,6 +48,14 @@ router
 
 // Webhook routes (public - called by Resend)
 router.post('/webhooks/inbound-email', [WebhooksController, 'inboundEmail'])
+
+// Admin routes (protected - admin only)
+router
+  .group(() => {
+    router.get('/admin/users', [AdminsController, 'getUsers'])
+    router.post('/admin/check-mailbox', [AdminsController, 'checkMailbox'])
+  })
+  .use(middleware.auth())
 
 // Sysadmin routes (protected - sysadmin only)
 router
