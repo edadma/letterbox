@@ -80,11 +80,56 @@ cp .env.example .env
 # Edit .env file to add your configuration
 ```
 
-Required environment variables:
-- `RESEND_API_KEY` - Your Resend API key (must have Full Access)
-- `BOOTSTRAP_DOMAIN` - Default account domain (e.g., letterbox.to)
-- `BOOTSTRAP_ADMIN_EMAIL` - Initial admin email
-- `BOOTSTRAP_ADMIN_PASSWORD` - Initial admin password
+#### Local Development Setup (No Domain Verification Required)
+
+For local development, you can use Resend's test domains without DNS configuration:
+
+1. **Get your Resend inbound domain:**
+   - Go to [Resend Dashboard](https://resend.com/emails) → Receiving tab
+   - Note your auto-assigned `.resend.app` domain (e.g., `abc123.resend.app`)
+
+2. **Get a Resend API key:**
+   - Go to API Keys tab
+   - Create an API key with "Full Access" permissions (required for receiving emails)
+
+3. **Configure .env for local development:**
+   ```env
+   RESEND_API_KEY=re_your_api_key_here
+   BOOTSTRAP_DOMAIN=abc123.resend.app
+   BOOTSTRAP_ADMIN_MAILBOX=admin
+   BOOTSTRAP_ADMIN_PASSWORD=your_password_here
+   MAIL_FROM_ADDRESS=onboarding@resend.dev
+   ```
+
+4. **Set up ngrok for webhooks:**
+   ```bash
+   # Install ngrok: https://ngrok.com/download
+   ngrok http 3333
+   ```
+
+5. **Configure Resend webhook:**
+   - Go to Resend Dashboard → Webhooks
+   - Add webhook: `https://your-ngrok-url.ngrok-free.app/webhooks/inbound-email`
+   - Enable events: `email.received`, `email.bounced`, `email.failed`, `email.delivered`, `email.delivery_delayed`
+
+Now you can:
+- Send emails FROM `onboarding@resend.dev`
+- Receive emails at `username@abc123.resend.app` (any username you create)
+- Test bounce handling by sending to `bounced@resend.dev`
+
+#### Production Setup (Domain Verification Required)
+
+For production, use a verified domain:
+
+```env
+RESEND_API_KEY=re_your_production_api_key
+BOOTSTRAP_DOMAIN=yourdomain.com
+BOOTSTRAP_ADMIN_MAILBOX=admin
+BOOTSTRAP_ADMIN_PASSWORD=strong_password_here
+MAIL_FROM_ADDRESS=noreply@yourdomain.com
+```
+
+See "Production Deployment on VPS" section below for full DNS configuration.
 
 ### 4. Run Migrations & Seeders
 

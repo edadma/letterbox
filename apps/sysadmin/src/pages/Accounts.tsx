@@ -115,7 +115,7 @@ export default function Accounts() {
                     </tr>
                   </thead>
                   <tbody>
-                    {accounts.map((account) => (
+                    {accounts.map((account: Account) => (
                       <tr key={account.id}>
                         <td>{account.id}</td>
                         <td>
