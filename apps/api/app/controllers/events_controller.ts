@@ -1,12 +1,24 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import emitter from '@adonisjs/core/services/emitter'
 import Email from '#models/email'
-import { broadcastEmail, addClient, removeClient } from '#services/redis_broadcaster'
+import {
+  broadcastEmail,
+  broadcastEmailStatus,
+  addClient,
+  removeClient,
+} from '#services/redis_broadcaster'
 
 // Listen for email received events
 emitter.on('email:received', (emailData) => {
   // Broadcast using Redis in production, in-memory in development
   broadcastEmail(emailData)
+})
+
+// Listen for email status update events
+// @ts-ignore - Custom event for email status updates
+emitter.on('email:status_updated', (statusData) => {
+  // Broadcast using Redis in production, in-memory in development
+  broadcastEmailStatus(statusData)
 })
 
 export default class EventsController {
@@ -35,7 +47,7 @@ export default class EventsController {
     // Add client with user info
     addClient(response.response, {
       userId: user.id,
-      accountId: user.accountId,
+      accountId: user.accountId ?? 0, // 0 for sysadmins
       role: user.role,
     })
 
@@ -77,12 +89,24 @@ export default class EventsController {
       emails = await Email.query().orderBy('created_at', 'desc').limit(50)
     } else if (user.role === 'admin') {
       // Admin sees all emails in their account
+      if (!user.accountId) {
+        return response.status(403).json({
+          success: false,
+          message: 'Invalid account',
+        })
+      }
       emails = await Email.query()
         .where('account_id', user.accountId)
         .orderBy('created_at', 'desc')
         .limit(50)
     } else {
       // Regular user sees only their emails
+      if (!user.accountId) {
+        return response.status(403).json({
+          success: false,
+          message: 'Invalid account',
+        })
+      }
       emails = await Email.query()
         .where('account_id', user.accountId)
         .where('user_id', user.id)
@@ -107,6 +131,9 @@ export default class EventsController {
       accountId: email.accountId,
       userId: email.userId,
       direction: email.direction,
+      deliveryStatus: email.deliveryStatus,
+      bounceReason: email.bounceReason,
+      bounceType: email.bounceType,
     }))
 
     return response.json({

@@ -24,14 +24,17 @@ if (isProduction) {
     port: redisPort,
   })
 
-  // Subscribe to email events channel
-  redisSubscriber.subscribe('email:received')
+  // Subscribe to email events channels
+  redisSubscriber.subscribe('email:received', 'email:status_updated')
 
   // Handle incoming messages from Redis
   redisSubscriber.on('message', (channel: string, message: string) => {
     if (channel === 'email:received') {
       const emailData = JSON.parse(message)
-      broadcastToClients(emailData)
+      broadcastToClients(emailData, 'email:received')
+    } else if (channel === 'email:status_updated') {
+      const statusData = JSON.parse(message)
+      broadcastToClients(statusData, 'email:status_updated')
     }
   })
 }
@@ -39,8 +42,8 @@ if (isProduction) {
 /**
  * Broadcast email data to connected SSE clients based on their permissions
  */
-function broadcastToClients(emailData: any) {
-  const message = JSON.stringify({ type: 'email:received', data: emailData })
+function broadcastToClients(emailData: any, eventType: string) {
+  const message = JSON.stringify({ type: eventType, data: emailData })
 
   clients.forEach((userInfo, client) => {
     try {
@@ -70,7 +73,20 @@ export function broadcastEmail(emailData: any) {
     redisPublisher.publish('email:received', JSON.stringify(emailData))
   } else {
     // Direct broadcast to in-memory clients (development)
-    broadcastToClients(emailData)
+    broadcastToClients(emailData, 'email:received')
+  }
+}
+
+/**
+ * Broadcast an email status update to all connected clients
+ */
+export function broadcastEmailStatus(statusData: any) {
+  if (isProduction && redisPublisher) {
+    // Publish to Redis channel for multi-instance support
+    redisPublisher.publish('email:status_updated', JSON.stringify(statusData))
+  } else {
+    // Direct broadcast to in-memory clients (development)
+    broadcastToClients(statusData, 'email:status_updated')
   }
 }
 

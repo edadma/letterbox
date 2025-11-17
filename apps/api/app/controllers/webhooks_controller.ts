@@ -29,7 +29,20 @@ export default class WebhooksController {
     try {
       const payload = request.body()
 
-      console.log('Received inbound email webhook:', JSON.stringify(payload, null, 2))
+      console.log('Received webhook:', JSON.stringify(payload, null, 2))
+
+      // Handle different webhook event types
+      if (payload.type === 'email.bounced' || payload.type === 'email.failed') {
+        return this.handleBounceOrFailure(payload, response)
+      }
+
+      if (payload.type === 'email.delivered') {
+        return this.handleDelivered(payload, response)
+      }
+
+      if (payload.type === 'email.delivery_delayed') {
+        return this.handleDeliveryDelayed(payload, response)
+      }
 
       // Extract the email data from the webhook payload
       if (payload.type === 'email.received' && payload.data) {
@@ -146,5 +159,100 @@ export default class WebhooksController {
         error: error.message,
       })
     }
+  }
+
+  private async handleBounceOrFailure(payload: any, response: any) {
+    const { email_id, created_at } = payload.data
+
+    // Find the email by email_id
+    const email = await Email.query().where('email_id', email_id).first()
+
+    if (!email) {
+      console.warn(`Email not found for bounce/failure: ${email_id}`)
+      return response.json({ success: true, message: 'Email not found, skipping' })
+    }
+
+    // Update email with bounce/failure information
+    const isBounced = payload.type === 'email.bounced'
+    email.deliveryStatus = isBounced ? 'bounced' : 'failed'
+
+    if (isBounced) {
+      email.bouncedAt = DateTime.fromISO(created_at)
+      // Extract bounce information from payload
+      if (payload.data.bounce) {
+        email.bounceType = payload.data.bounce.type || 'hard'
+        email.bounceReason = JSON.stringify(payload.data.bounce)
+      }
+    } else {
+      email.failedAt = DateTime.fromISO(created_at)
+      email.bounceReason = payload.data.error || 'Unknown failure'
+    }
+
+    await email.save()
+
+    console.log(`Email ${email_id} marked as ${email.deliveryStatus}`)
+
+    // Emit event for real-time updates
+    // @ts-ignore - Custom event for email status updates
+    emitter.emit('email:status_updated', {
+      id: email.id,
+      emailId: email_id,
+      deliveryStatus: email.deliveryStatus,
+      bounceReason: email.bounceReason,
+      bounceType: email.bounceType,
+    })
+
+    return response.json({ success: true, message: 'Bounce/failure processed' })
+  }
+
+  private async handleDelivered(payload: any, response: any) {
+    const { email_id, created_at } = payload.data
+
+    const email = await Email.query().where('email_id', email_id).first()
+
+    if (!email) {
+      console.warn(`Email not found for delivery: ${email_id}`)
+      return response.json({ success: true, message: 'Email not found, skipping' })
+    }
+
+    email.deliveryStatus = 'delivered'
+    email.deliveredAt = DateTime.fromISO(created_at)
+    await email.save()
+
+    console.log(`Email ${email_id} marked as delivered`)
+
+    // @ts-ignore - Custom event for email status updates
+    emitter.emit('email:status_updated', {
+      id: email.id,
+      emailId: email_id,
+      deliveryStatus: 'delivered',
+    })
+
+    return response.json({ success: true, message: 'Delivery confirmed' })
+  }
+
+  private async handleDeliveryDelayed(payload: any, response: any) {
+    const { email_id } = payload.data
+
+    const email = await Email.query().where('email_id', email_id).first()
+
+    if (!email) {
+      console.warn(`Email not found for delivery delay: ${email_id}`)
+      return response.json({ success: true, message: 'Email not found, skipping' })
+    }
+
+    email.deliveryStatus = 'delivery_delayed'
+    await email.save()
+
+    console.log(`Email ${email_id} marked as delivery_delayed`)
+
+    // @ts-ignore - Custom event for email status updates
+    emitter.emit('email:status_updated', {
+      id: email.id,
+      emailId: email_id,
+      deliveryStatus: 'delivery_delayed',
+    })
+
+    return response.json({ success: true, message: 'Delivery delay noted' })
   }
 }

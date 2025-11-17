@@ -17,6 +17,14 @@ export default class AdminsController {
         })
       }
 
+      // Sysadmins shouldn't be able to list users (they use sysadmin panel)
+      if (!user.accountId) {
+        return response.status(403).json({
+          success: false,
+          message: 'Sysadmin access not allowed in admin panel',
+        })
+      }
+
       const users = await User.query()
         .where('account_id', user.accountId)
         .where('role', '!=', 'sysadmin')

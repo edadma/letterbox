@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useMutation } from '@tanstack/react-query'
 
 interface Account {
   id: number
@@ -11,61 +12,57 @@ interface Account {
   createdAt: string
 }
 
-interface User {
-  id: number
-  email: string
-  name: string
-  role: string
-}
-
 export default function Accounts() {
   const navigate = useNavigate()
-  const [user, setUser] = useState<User | null>(null)
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [authChecked, setAuthChecked] = useState(false)
 
+  // Check authentication
+  const { data: authData, isLoading: authLoading } = useQuery({
+    queryKey: ['auth', 'me'],
+    queryFn: async () => {
+      const response = await fetch('/api/auth/me')
+      if (!response.ok) throw new Error('Not authenticated')
+      return response.json()
+    },
+    retry: false,
+  })
+
+  const user = authData?.success && authData.user.role === 'sysadmin' ? authData.user : null
+
+  // Redirect if not sysadmin
   useEffect(() => {
-    fetch('/api/auth/me')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && data.user && data.user.role === 'sysadmin') {
-          setUser(data.user)
-          setAuthChecked(true)
-          loadAccounts()
-        } else {
-          navigate('/login')
-        }
-      })
-      .catch(() => {
-        navigate('/login')
-      })
-  }, [navigate])
-
-  const loadAccounts = async () => {
-    try {
-      const response = await fetch('/api/sysadmin/accounts')
-      const data = await response.json()
-      if (data.success) {
-        setAccounts(data.accounts)
-      }
-    } catch (error) {
-      console.error('Failed to load accounts:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' })
+    if (!authLoading && !user) {
       navigate('/login')
-    } catch (error) {
-      console.error('Logout failed:', error)
     }
+  }, [authLoading, user, navigate])
+
+  // Fetch accounts
+  const { data: accountsData, isLoading: accountsLoading } = useQuery({
+    queryKey: ['sysadmin', 'accounts'],
+    queryFn: async () => {
+      const response = await fetch('/api/sysadmin/accounts')
+      if (!response.ok) throw new Error('Failed to load accounts')
+      return response.json()
+    },
+    enabled: !!user,
+  })
+
+  const accounts = accountsData?.success ? accountsData.accounts : []
+
+  // Logout mutation
+  const logoutMutation = useMutation({
+    mutationFn: async () => {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    },
+    onSuccess: () => {
+      navigate('/login')
+    },
+  })
+
+  const handleLogout = () => {
+    logoutMutation.mutate()
   }
 
-  if (!authChecked || !user) {
+  if (authLoading || !user) {
     return (
       <div className="min-h-screen bg-base-200 flex items-center justify-center">
         <span className="loading loading-spinner loading-lg"></span>
@@ -97,7 +94,7 @@ export default function Accounts() {
               {accounts.length > 0 && <span className="badge badge-primary">{accounts.length}</span>}
             </h2>
 
-            {isLoading ? (
+            {accountsLoading ? (
               <div className="flex justify-center py-8">
                 <span className="loading loading-spinner loading-lg"></span>
               </div>

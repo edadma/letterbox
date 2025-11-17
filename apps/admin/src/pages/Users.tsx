@@ -1,18 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useForm } from 'react-hook-form'
-
-interface User {
-  id: number
-  email: string
-  name: string
-  role: string
-  isActive: boolean
-  createdAt: string
-}
-
-interface Account {
-  domain: string
-}
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 interface CreateUserForm {
   name: string
@@ -21,49 +9,66 @@ interface CreateUserForm {
 }
 
 export default function Users() {
-  const [users, setUsers] = useState<User[]>([])
-  const [account, setAccount] = useState<Account | null>(null)
-  const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [error, setError] = useState('')
+  const queryClient = useQueryClient()
+  const isDevMode = import.meta.env.VITE_DEV_MODE === 'true'
 
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { errors },
     reset,
   } = useForm<CreateUserForm>()
 
-  useEffect(() => {
-    loadAccount()
-    loadUsers()
-  }, [])
-
-  const loadAccount = async () => {
-    try {
+  // Fetch current user/account info
+  const { data: authData } = useQuery({
+    queryKey: ['auth', 'me'],
+    queryFn: async () => {
       const response = await fetch('/api/auth/me')
-      const data = await response.json()
-      if (data.success && data.user) {
-        setAccount({ domain: data.user.account.domain })
-      }
-    } catch (error) {
-      console.error('Failed to load account:', error)
-    }
-  }
+      if (!response.ok) throw new Error('Failed to load account')
+      return response.json()
+    },
+  })
 
-  const loadUsers = async () => {
-    try {
+  const account = authData?.success ? { domain: authData.user.account.domain } : null
+
+  // Fetch users list
+  const { data: usersData, isLoading } = useQuery({
+    queryKey: ['admin', 'users'],
+    queryFn: async () => {
       const response = await fetch('/api/admin/users')
-      const data = await response.json()
-      if (data.success) {
-        setUsers(data.users)
+      if (!response.ok) throw new Error('Failed to load users')
+      return response.json()
+    },
+  })
+
+  const users = usersData?.success ? usersData.users : []
+
+  // Create user mutation
+  const createUserMutation = useMutation({
+    mutationFn: async (data: { name: string; email: string; password: string }) => {
+      const response = await fetch('/api/auth/register-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      const result = await response.json()
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to create user')
       }
-    } catch (error) {
-      console.error('Failed to load users:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+      return result
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
+      setShowModal(false)
+      reset()
+      setError('')
+    },
+    onError: (error: Error) => {
+      setError(error.message)
+    },
+  })
 
   const onSubmit = async (formData: CreateUserForm) => {
     if (!account) {
@@ -72,33 +77,12 @@ export default function Users() {
     }
 
     setError('')
-
-    try {
-      const email = `${formData.mailbox}@${account.domain}`
-      const response = await fetch('/api/auth/register-user', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: formData.name,
-          email: email,
-          password: formData.password,
-        }),
-      })
-
-      const data = await response.json()
-
-      if (data.success) {
-        setShowModal(false)
-        reset()
-        loadUsers()
-      } else {
-        setError(data.message || 'Failed to create user')
-      }
-    } catch {
-      setError('Failed to create user')
-    }
+    const email = `${formData.mailbox}@${account.domain}`
+    createUserMutation.mutate({
+      name: formData.name,
+      email,
+      password: formData.password,
+    })
   }
 
   return (
@@ -110,7 +94,7 @@ export default function Users() {
         </button>
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div className="flex justify-center py-8">
           <span className="loading loading-spinner loading-lg"></span>
         </div>
@@ -136,7 +120,7 @@ export default function Users() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((user) => (
+                  {users.map((user: any) => (
                     <tr key={user.id}>
                       <td>{user.id}</td>
                       <td>{user.name}</td>
@@ -221,10 +205,12 @@ export default function Users() {
                   className={`input input-bordered ${errors.password ? 'input-error' : ''}`}
                   {...register('password', {
                     required: 'Password is required',
-                    minLength: {
-                      value: 8,
-                      message: 'Password must be at least 8 characters',
-                    },
+                    ...(isDevMode ? {} : {
+                      minLength: {
+                        value: 8,
+                        message: 'Password must be at least 8 characters',
+                      },
+                    }),
                   })}
                 />
                 {errors.password && (
@@ -252,8 +238,8 @@ export default function Users() {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                  {isSubmitting ? 'Creating...' : 'Create User'}
+                <button type="submit" className="btn btn-primary" disabled={createUserMutation.isPending}>
+                  {createUserMutation.isPending ? 'Creating...' : 'Create User'}
                 </button>
               </div>
             </form>

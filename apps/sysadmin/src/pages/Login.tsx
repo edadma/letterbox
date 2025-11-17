@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
+import { useMutation } from '@tanstack/react-query'
 
 interface LoginForm {
   email: string
@@ -14,33 +15,36 @@ export default function Login() {
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = useForm<LoginForm>()
 
-  const onSubmit = async (formData: LoginForm) => {
-    setError('')
-
-    try {
+  const loginMutation = useMutation({
+    mutationFn: async (data: LoginForm) => {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
       })
-
-      const data = await response.json()
-
-      if (data.success && data.user.role === 'sysadmin') {
-        navigate('/')
-      } else if (data.success) {
-        setError('Access denied. Sysadmin role required.')
-      } else {
-        setError(data.message || 'Login failed')
+      const result = await response.json()
+      if (!result.success) {
+        throw new Error(result.message || 'Login failed')
       }
-    } catch {
-      setError('Failed to login')
-    }
+      if (result.user.role !== 'sysadmin') {
+        throw new Error('Access denied. Sysadmin role required.')
+      }
+      return result
+    },
+    onSuccess: () => {
+      navigate('/')
+    },
+    onError: (error: Error) => {
+      setError(error.message)
+    },
+  })
+
+  const onSubmit = (formData: LoginForm) => {
+    setError('')
+    loginMutation.mutate(formData)
   }
 
   return (
@@ -97,8 +101,8 @@ export default function Login() {
             )}
 
             <div className="card-actions justify-end">
-              <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                {isSubmitting ? 'Logging in...' : 'Login'}
+              <button type="submit" className="btn btn-primary" disabled={loginMutation.isPending}>
+                {loginMutation.isPending ? 'Logging in...' : 'Login'}
               </button>
             </div>
           </form>

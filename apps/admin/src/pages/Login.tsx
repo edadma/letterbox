@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
+import { useMutation } from '@tanstack/react-query'
 
 interface LoginForm {
-  email: string
+  mailbox: string
   password: string
 }
 
@@ -11,64 +12,76 @@ export default function Login() {
   const navigate = useNavigate()
   const [error, setError] = useState('')
 
+  // Get domain from env var (for dev) or current URL hostname (for production)
+  const domain = import.meta.env.VITE_DEV_DOMAIN || window.location.hostname
+
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = useForm<LoginForm>()
 
-  const onSubmit = async (formData: LoginForm) => {
-    setError('')
-
-    try {
+  const loginMutation = useMutation({
+    mutationFn: async (data: LoginForm) => {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: `${data.mailbox}@${domain}`,
+          password: data.password,
+        }),
       })
-
-      const data = await response.json()
-
-      if (data.success && (data.user.role === 'admin' || data.user.role === 'sysadmin')) {
-        navigate('/')
-      } else if (data.success) {
-        setError('Access denied. Admin role required.')
-      } else {
-        setError(data.message || 'Login failed')
+      const result = await response.json()
+      if (!result.success) {
+        throw new Error(result.message || 'Login failed')
       }
-    } catch {
-      setError('Failed to login')
-    }
+      if (result.user.role !== 'admin' && result.user.role !== 'sysadmin') {
+        throw new Error('Access denied. Admin role required.')
+      }
+      return result
+    },
+    onSuccess: () => {
+      navigate('/')
+    },
+    onError: (error: Error) => {
+      setError(error.message)
+    },
+  })
+
+  const onSubmit = (formData: LoginForm) => {
+    setError('')
+    loginMutation.mutate(formData)
   }
 
   return (
     <div className="min-h-screen bg-base-200 flex items-center justify-center p-4">
       <div className="card bg-base-100 shadow-xl w-full max-w-md">
         <div className="card-body">
-          <h2 className="card-title text-2xl mb-4">Admin Login</h2>
+          <h2 className="card-title text-2xl mb-4">Admin Login - {domain}</h2>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="form-control">
               <label className="label">
-                <span className="label-text">Email</span>
+                <span className="label-text">Mailbox</span>
               </label>
-              <input
-                type="email"
-                placeholder="admin@example.com"
-                className={`input input-bordered ${errors.email ? 'input-error' : ''}`}
-                {...register('email', {
-                  required: 'Email is required',
-                  pattern: {
-                    value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                    message: 'Invalid email address',
-                  },
-                })}
-              />
-              {errors.email && (
+              <div className="join w-full">
+                <input
+                  type="text"
+                  placeholder="admin"
+                  className={`input input-bordered join-item flex-1 ${errors.mailbox ? 'input-error' : ''}`}
+                  {...register('mailbox', {
+                    required: 'Mailbox name is required',
+                    pattern: {
+                      value: /^[a-z0-9._-]+$/i,
+                      message: 'Invalid mailbox name (use letters, numbers, dots, dashes, underscores)',
+                    },
+                  })}
+                />
+                <span className="join-item btn btn-disabled">@{domain}</span>
+              </div>
+              {errors.mailbox && (
                 <label className="label">
-                  <span className="label-text-alt text-error">{errors.email.message}</span>
+                  <span className="label-text-alt text-error">{errors.mailbox.message}</span>
                 </label>
               )}
             </div>
@@ -97,8 +110,8 @@ export default function Login() {
             )}
 
             <div className="card-actions justify-end">
-              <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                {isSubmitting ? 'Logging in...' : 'Login'}
+              <button type="submit" className="btn btn-primary" disabled={loginMutation.isPending}>
+                {loginMutation.isPending ? 'Logging in...' : 'Login'}
               </button>
             </div>
           </form>

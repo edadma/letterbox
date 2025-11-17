@@ -33,11 +33,12 @@ export default class extends BaseSeeder {
     console.log(`Created bootstrap account: ${account.name} (${account.domain})`)
 
     // Create the initial admin user if credentials provided
-    const adminEmail = env.get('BOOTSTRAP_ADMIN_EMAIL')
+    const adminMailbox = env.get('BOOTSTRAP_ADMIN_MAILBOX')
     const adminPassword = env.get('BOOTSTRAP_ADMIN_PASSWORD')
     const adminName = env.get('BOOTSTRAP_ADMIN_NAME') || 'Admin'
 
-    if (adminEmail && adminPassword) {
+    if (adminMailbox && adminPassword) {
+      const adminEmail = `${adminMailbox}@${bootstrapDomain}`
       const existingUser = await User.query()
         .where('account_id', account.id)
         .where('email', adminEmail)
@@ -57,23 +58,24 @@ export default class extends BaseSeeder {
       }
     } else {
       console.log(
-        'Skipping admin user creation - BOOTSTRAP_ADMIN_EMAIL and/or BOOTSTRAP_ADMIN_PASSWORD not set'
+        'Skipping admin user creation - BOOTSTRAP_ADMIN_MAILBOX and/or BOOTSTRAP_ADMIN_PASSWORD not set'
       )
     }
 
     // Create the sysadmin user if credentials provided
+    // Sysadmin is not tied to any account (accountId = null)
     const sysadminEmail = env.get('SYSADMIN_EMAIL')
     const sysadminPassword = env.get('SYSADMIN_PASSWORD')
 
     if (sysadminEmail && sysadminPassword) {
       const existingSysadmin = await User.query()
-        .where('account_id', account.id)
+        .whereNull('account_id')
         .where('email', sysadminEmail)
         .first()
 
       if (!existingSysadmin) {
         const sysadmin = await User.create({
-          accountId: account.id,
+          accountId: null,
           email: sysadminEmail,
           password: sysadminPassword,
           name: 'System Admin',

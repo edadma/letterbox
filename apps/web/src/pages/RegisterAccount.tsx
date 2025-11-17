@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useMutation } from '@tanstack/react-query'
 
 export default function RegisterAccount() {
   const navigate = useNavigate()
@@ -13,35 +14,33 @@ export default function RegisterAccount() {
     email: '',
     password: '',
   })
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
-
-    try {
+  const registerMutation = useMutation({
+    mutationFn: async (data: typeof formData) => {
       const response = await fetch('/api/auth/register-account', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
       })
-
-      const data = await response.json()
-
-      if (data.success) {
-        navigate('/')
-      } else {
-        setError(data.message || 'Registration failed')
+      const result = await response.json()
+      if (!result.success) {
+        throw new Error(result.message || 'Registration failed')
       }
-    } catch {
-      setError('Failed to register account')
-    } finally {
-      setLoading(false)
-    }
+      return result
+    },
+    onSuccess: () => {
+      navigate('/')
+    },
+    onError: (error: Error) => {
+      setError(error.message)
+    },
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    registerMutation.mutate(formData)
   }
 
   return (
@@ -181,12 +180,12 @@ export default function RegisterAccount() {
                 type="button"
                 className="btn btn-ghost"
                 onClick={() => navigate('/login')}
-                disabled={loading}
+                disabled={registerMutation.isPending}
               >
                 Already have an account?
               </button>
-              <button type="submit" className={`btn btn-primary ${loading ? 'loading' : ''}`} disabled={loading}>
-                {loading ? 'Creating Account...' : 'Create Account'}
+              <button type="submit" className="btn btn-primary" disabled={registerMutation.isPending}>
+                {registerMutation.isPending ? 'Creating Account...' : 'Create Account'}
               </button>
             </div>
           </form>

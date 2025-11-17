@@ -59,6 +59,24 @@ export default class Email extends BaseModel {
   @column.dateTime()
   declare emailCreatedAt: DateTime | null
 
+  @column()
+  declare deliveryStatus: 'sent' | 'delivered' | 'bounced' | 'failed' | 'delivery_delayed' | null
+
+  @column()
+  declare bounceReason: string | null
+
+  @column()
+  declare bounceType: 'hard' | 'soft' | 'transient' | null
+
+  @column.dateTime()
+  declare deliveredAt: DateTime | null
+
+  @column.dateTime()
+  declare bouncedAt: DateTime | null
+
+  @column.dateTime()
+  declare failedAt: DateTime | null
+
   @belongsTo(() => Account)
   declare account: BelongsTo<typeof Account>
 

@@ -1,6 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { QueryClient, QueryClientProvider, useQuery, useMutation } from '@tanstack/react-query'
+import { BrowserRouter, Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Users from './pages/Users'
 import Login from './pages/Login'
@@ -9,14 +8,19 @@ const queryClient = new QueryClient()
 
 function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation()
+  const navigate = useNavigate()
 
-  const handleLogout = async () => {
-    try {
+  const logoutMutation = useMutation({
+    mutationFn: async () => {
       await fetch('/api/auth/logout', { method: 'POST' })
-      window.location.href = '/login'
-    } catch (error) {
-      console.error('Logout failed:', error)
-    }
+    },
+    onSuccess: () => {
+      navigate('/login')
+    },
+  })
+
+  const handleLogout = () => {
+    logoutMutation.mutate()
   }
 
   return (
@@ -61,27 +65,30 @@ function Layout({ children }: { children: React.ReactNode }) {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const response = await fetch('/api/auth/me')
-        const data = await response.json()
-        setIsAuthenticated(data.success && (data.user.role === 'admin' || data.user.role === 'sysadmin'))
-      } catch {
-        setIsAuthenticated(false)
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['auth', 'me'],
+    queryFn: async () => {
+      const response = await fetch('/api/auth/me')
+      if (!response.ok) {
+        throw new Error('Not authenticated')
       }
-    }
+      return response.json()
+    },
+    retry: false,
+  })
 
-    checkAuth()
-  }, [])
+  // Set document title to account name for admins
+  if (data?.success && data.user.account?.name) {
+    document.title = `${data.user.account.name} Admin`
+  }
 
-  if (isAuthenticated === null) {
+  if (isLoading) {
     return <div className="min-h-screen bg-base-200 flex items-center justify-center">Loading...</div>
   }
 
-  if (!isAuthenticated) {
+  const isAuthenticated = data?.success && (data.user.role === 'admin' || data.user.role === 'sysadmin')
+
+  if (isError || !isAuthenticated) {
     return <Navigate to="/login" replace />
   }
 

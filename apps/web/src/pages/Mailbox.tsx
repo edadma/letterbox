@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 interface InboundEmail {
   id: number
@@ -13,19 +14,9 @@ interface InboundEmail {
   created_at?: string
   attachments?: unknown[]
   direction?: string
-}
-
-interface User {
-  id: number
-  email: string
-  name: string
-  role: string
-  accountId: number
-  account: {
-    id: number
-    name: string
-    domain: string
-  }
+  deliveryStatus?: 'sent' | 'delivered' | 'bounced' | 'failed' | 'delivery_delayed' | null
+  bounceReason?: string | null
+  bounceType?: 'hard' | 'soft' | 'transient' | null
 }
 
 interface SendEmailForm {
@@ -36,38 +27,58 @@ interface SendEmailForm {
 
 export default function Mailbox() {
   const navigate = useNavigate()
-  const [user, setUser] = useState<User | null>(null)
   const [message, setMessage] = useState('')
   const [receivedEmails, setReceivedEmails] = useState<InboundEmail[]>([])
-  const [authChecked, setAuthChecked] = useState(false)
+  const queryClient = useQueryClient()
 
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { errors },
     reset,
   } = useForm<SendEmailForm>()
 
-  // Check authentication on mount
+  // Check authentication
+  const { data: authData, isLoading } = useQuery({
+    queryKey: ['auth', 'me'],
+    queryFn: async () => {
+      const response = await fetch('/api/auth/me')
+      if (!response.ok) throw new Error('Not authenticated')
+      return response.json()
+    },
+    retry: false,
+  })
+
+  const user = authData?.success ? authData.user : null
+
+  // Redirect if not authenticated
   useEffect(() => {
-    fetch('/api/auth/me')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && data.user) {
-          setUser(data.user)
-          setAuthChecked(true)
-        } else {
-          navigate('/login')
-        }
-      })
-      .catch(() => {
-        navigate('/login')
-      })
-  }, [navigate])
+    if (!isLoading && !user) {
+      navigate('/login')
+    }
+  }, [isLoading, user, navigate])
+
+  // Fetch recent emails
+  const { data: emailsData } = useQuery({
+    queryKey: ['emails', 'recent'],
+    queryFn: async () => {
+      const response = await fetch('/api/events/recent-emails')
+      if (!response.ok) throw new Error('Failed to load emails')
+      return response.json()
+    },
+    enabled: !!user,
+  })
+
+  // Set initial emails from query
+  useEffect(() => {
+    if (emailsData?.success && emailsData.emails) {
+      setReceivedEmails(emailsData.emails)
+    }
+  }, [emailsData])
 
   // Connect to SSE for real-time email updates
   useEffect(() => {
-    if (!authChecked || !user) return
+    if (!user) return
 
     const eventSource = new EventSource('/api/events/stream')
 
@@ -76,6 +87,21 @@ export default function Mailbox() {
         const data = JSON.parse(event.data)
         if (data.type === 'email:received') {
           setReceivedEmails((prev) => [data.data, ...prev])
+          queryClient.invalidateQueries({ queryKey: ['emails', 'recent'] })
+        } else if (data.type === 'email:status_updated') {
+          // Update existing email with new delivery status
+          setReceivedEmails((prev) =>
+            prev.map((email) =>
+              email.id === data.data.id
+                ? {
+                    ...email,
+                    deliveryStatus: data.data.deliveryStatus,
+                    bounceReason: data.data.bounceReason,
+                    bounceType: data.data.bounceType,
+                  }
+                : email
+            )
+          )
         }
       } catch (error) {
         console.error('SSE parse error:', error)
@@ -86,58 +112,55 @@ export default function Mailbox() {
       console.error('SSE error:', error)
     }
 
-    // Load recent emails on mount
-    fetch('/api/events/recent-emails')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && data.emails) {
-          setReceivedEmails(data.emails)
-        }
-      })
-      .catch((error) => console.error('Failed to load recent emails:', error))
-
     return () => {
       eventSource.close()
     }
-  }, [authChecked, user])
+  }, [user, queryClient])
 
-  const onSubmit = async (formData: SendEmailForm) => {
-    setMessage('')
-
-    try {
+  // Send email mutation
+  const sendEmailMutation = useMutation({
+    mutationFn: async (data: SendEmailForm) => {
       const response = await fetch('/api/mail/send', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
       })
-
-      const data = await response.json()
-
-      if (data.success) {
-        setMessage('Email sent successfully!')
-        reset()
-      } else {
-        console.error('Error response:', data)
-        setMessage(`Error: ${data.message || data.error || 'Unknown error'}`)
+      const result = await response.json()
+      if (!result.success) {
+        throw new Error(result.message || result.error || 'Failed to send email')
       }
-    } catch (error) {
-      console.error('Fetch error:', error)
-      setMessage('Failed to send email. Please try again.')
-    }
-  }
+      return result
+    },
+    onSuccess: () => {
+      setMessage('Email sent successfully!')
+      reset()
+      queryClient.invalidateQueries({ queryKey: ['emails', 'recent'] })
+    },
+    onError: (error: Error) => {
+      setMessage(`Error: ${error.message}`)
+    },
+  })
 
-  const handleLogout = async () => {
-    try {
+  // Logout mutation
+  const logoutMutation = useMutation({
+    mutationFn: async () => {
       await fetch('/api/auth/logout', { method: 'POST' })
+    },
+    onSuccess: () => {
       navigate('/login')
-    } catch (error) {
-      console.error('Logout failed:', error)
-    }
+    },
+  })
+
+  const onSubmit = (formData: SendEmailForm) => {
+    setMessage('')
+    sendEmailMutation.mutate(formData)
   }
 
-  if (!authChecked || !user) {
+  const handleLogout = () => {
+    logoutMutation.mutate()
+  }
+
+  if (isLoading || !user) {
     return (
       <div className="min-h-screen bg-base-200 flex items-center justify-center">
         <span className="loading loading-spinner loading-lg"></span>
@@ -237,8 +260,8 @@ export default function Mailbox() {
               )}
 
               <div className="card-actions justify-end">
-                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                  {isSubmitting ? 'Sending...' : 'Send Email'}
+                <button type="submit" className="btn btn-primary" disabled={sendEmailMutation.isPending}>
+                  {sendEmailMutation.isPending ? 'Sending...' : 'Send Email'}
                 </button>
               </div>
             </form>
@@ -265,6 +288,18 @@ export default function Mailbox() {
                       <div className="flex items-center gap-2">
                         {email.direction === 'outbound' && <span className="badge badge-sm">Sent</span>}
                         {email.direction === 'inbound' && <span className="badge badge-sm badge-primary">Received</span>}
+                        {email.deliveryStatus === 'delivered' && (
+                          <span className="badge badge-sm badge-success">Delivered</span>
+                        )}
+                        {email.deliveryStatus === 'bounced' && (
+                          <span className="badge badge-sm badge-error">Bounced</span>
+                        )}
+                        {email.deliveryStatus === 'failed' && (
+                          <span className="badge badge-sm badge-error">Failed</span>
+                        )}
+                        {email.deliveryStatus === 'delivery_delayed' && (
+                          <span className="badge badge-sm badge-warning">Delayed</span>
+                        )}
                       </div>
                       <div>
                         <span className="font-semibold">From:</span>{' '}
@@ -278,6 +313,14 @@ export default function Mailbox() {
                         <span className="font-semibold">Subject:</span>{' '}
                         <span className="text-base-content/70">{email.subject}</span>
                       </div>
+                      {(email.deliveryStatus === 'bounced' || email.deliveryStatus === 'failed') && email.bounceReason && (
+                        <div className="alert alert-error text-xs py-2">
+                          <span>
+                            <strong>Bounce reason:</strong> {email.bounceReason}
+                            {email.bounceType && ` (${email.bounceType} bounce)`}
+                          </span>
+                        </div>
+                      )}
                       <div className="divider my-2"></div>
                       <div>
                         <span className="font-semibold">Body:</span>
